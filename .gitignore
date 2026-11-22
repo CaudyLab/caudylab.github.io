@@ -1,0 +1,10 @@
+# Fichiers générés par les systèmes d'exploitation et les éditeurs
+Thumbs.db
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Fichiers temporaires OpenCode / outils locaux
+*.tmp
+*.bak

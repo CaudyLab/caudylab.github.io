@@ -63,6 +63,16 @@ nav a:hover{color:var(--ink)}
 .btn:hover{transform:translateY(-2px)}
 .btn{transition:transform .15s}
 
+/* Compteur de visites et bouton « j’aime » */
+.stats{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:28px}
+.stat{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#E6EEF1;font:500 14px/1.2 "IBM Plex Sans",sans-serif}
+.stat svg{flex:none;width:16px;height:16px;fill:none;stroke:var(--a,var(--accent));stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.stat b{font-variant-numeric:tabular-nums;color:#fff}
+button.stat{cursor:pointer;transition:transform .15s,border-color .2s,background .2s}
+button.stat:hover{transform:translateY(-2px);border-color:var(--a,var(--accent))}
+button.stat[aria-pressed="true"]{background:rgba(255,106,77,.18);border-color:var(--a,var(--accent));cursor:default}
+button.stat[aria-pressed="true"] svg{fill:var(--a,var(--accent))}
+
 section{padding:72px 0;border-top:1px solid var(--line)}
 section>.wrap>h2{font-size:clamp(32px,5vw,52px);margin-bottom:36px}
 
@@ -207,6 +217,16 @@ dialog .nav[hidden]{display:none}
       <div class="btns">
         <a class="btn main" href="#realisations">Voir mes réalisations</a>
         <a class="btn" href="#contact">Parler de votre projet</a>
+      </div>
+      <div class="stats" aria-label="Statistiques du site">
+        <span class="stat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.2 10-6.2S22 12 22 12s-3.6 6.2-10 6.2S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+          <span><b id="visit-count" aria-live="polite">…</b> visites</span>
+        </span>
+        <button class="stat" id="like-btn" type="button" aria-pressed="false" aria-label="J’aime ce site">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 5.2a5.2 5.2 0 0 0-7.4 0L12 6.6l-1.4-1.4a5.2 5.2 0 0 0-7.4 7.4L12 21l8.8-8.4a5.2 5.2 0 0 0 0-7.4z"/></svg>
+          <span><b id="like-count" aria-live="polite">…</b> j’aime</span>
+        </button>
       </div>
     </div>
     <div class="code" aria-hidden="true">
@@ -372,6 +392,67 @@ document.querySelectorAll('.work').forEach(function(w){
   w.addEventListener('pointermove',function(e){var b=w.getBoundingClientRect();
     w.style.setProperty('--px',(e.clientX-b.left)+'px');w.style.setProperty('--py',(e.clientY-b.top)+'px');});
 });
+})();
+</script>
+<script>
+/* Compteurs partagés (visites + j’aime) via Abacus, avec repli local. */
+(function(){
+  var BASE='https://abacus.jasoncameron.dev', NS='caudylab.github.io',
+      VK='caudylab:visits', LK='caudylab:likes',
+      DAY='caudylab:visit-day', LIKED='caudylab:liked';
+  var vEl=document.getElementById('visit-count'),
+      lEl=document.getElementById('like-count'),
+      btn=document.getElementById('like-btn');
+  if(!vEl||!lEl||!btn)return;
+
+  var fmt=new Intl.NumberFormat('fr-FR');
+  function show(el,n){el.textContent=n===null?'—':fmt.format(n);}
+  function read(k){try{var v=localStorage.getItem(k);return v===null?null:(Number(v)||0);}catch(e){return null;}}
+  function write(k,v){try{localStorage.setItem(k,String(v));}catch(e){}}
+
+  function request(path){
+    var opts={cache:'no-store'},t;
+    if(window.AbortController){
+      var ctl=new AbortController();opts.signal=ctl.signal;
+      t=setTimeout(function(){ctl.abort();},12000);
+    }
+    function done(){if(t)clearTimeout(t);}
+    return fetch(BASE+path,opts)
+      .then(function(r){if(r.status===404)return {value:0};if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+      .then(function(d){var n=Number(d&&d.value);if(!isFinite(n))throw new Error('Réponse invalide');return n;})
+      .then(function(n){done();return n;},function(e){done();throw e;});
+  }
+
+  var cachedV=read(VK),cachedL=read(LK);
+  show(vEl,cachedV);show(lEl,cachedL);
+
+  /* Une seule visite comptée par navigateur et par jour ; les aperçus locaux ne comptent pas. */
+  var local=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)||location.protocol==='file:';
+  var today=new Date().toISOString().slice(0,10),seen='';
+  try{seen=localStorage.getItem(DAY)||'';}catch(e){}
+  var mustHit=!local&&seen!==today;
+  request((mustHit?'/hit/':'/get/')+NS+'/visits')
+    .then(function(n){show(vEl,n);write(VK,n);if(mustHit)write(DAY,today);})
+    .catch(function(){show(vEl,cachedV);});
+
+  /* Affichage : lecture seule. Le +1 n’arrive qu’au clic. */
+  request('/get/'+NS+'/likes')
+    .then(function(n){show(lEl,n);write(LK,n);})
+    .catch(function(){show(lEl,cachedL);});
+
+  var liked=false;
+  try{liked=localStorage.getItem(LIKED)==='1';}catch(e){}
+  if(liked)btn.setAttribute('aria-pressed','true');
+
+  btn.addEventListener('click',function(){
+    if(btn.getAttribute('aria-pressed')==='true')return;
+    btn.setAttribute('aria-pressed','true');
+    try{localStorage.setItem(LIKED,'1');}catch(e){}
+    var fallback=(read(LK)||0)+1;
+    request('/hit/'+NS+'/likes')
+      .then(function(n){show(lEl,n);write(LK,n);})
+      .catch(function(){show(lEl,fallback);write(LK,fallback);btn.title='Compteur indisponible : votre vote est enregistré sur cet appareil.';});
+  });
 })();
 </script>
 </body>
